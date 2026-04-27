@@ -1,0 +1,6 @@
+{
+  "modmenu.nameTranslation.random-craft": "Random Crafts",
+  "modmenu.descriptionTranslation.random-craft": "Let's randomize crafts for each world! Let the chaos begin...",
+  "gamerule.randomizeCrafts": "Randomize crafting",
+  "gamerule.randomizeCrafts.description": "Randomizes all crafting recipes when the world is created"
+}

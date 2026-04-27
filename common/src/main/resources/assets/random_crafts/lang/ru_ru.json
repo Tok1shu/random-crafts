@@ -1,0 +1,6 @@
+{
+  "modmenu.nameTranslation.random-craft": "Random Crafts",
+  "modmenu.descriptionTranslation.random-craft": "Рандомизирует крафты для каждого мира! Да начнётся хаос...",
+  "gamerule.randomizeCrafts": "Случайный крафт",
+  "gamerule.randomizeCrafts.description": "Случайно изменяет рецепты крафта при создании мира"
+}
