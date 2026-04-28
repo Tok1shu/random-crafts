@@ -1,6 +1,13 @@
 package net.weyne1.randomcrafts.core.world;
 
+import com.mojang.brigadier.arguments.LongArgumentType;
+import com.mojang.brigadier.context.CommandContext;
+import dev.architectury.event.events.common.CommandRegistrationEvent;
 import dev.architectury.event.events.common.LifecycleEvent;
+import net.minecraft.ChatFormatting;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -28,37 +35,90 @@ public class RandomCraftWorldEvents {
 
     public static void init() {
         LifecycleEvent.SERVER_STARTED.register(RandomCraftWorldEvents::onServerStarted);
+
+        CommandRegistrationEvent.EVENT.register((dispatcher, registry, selection) -> dispatcher.register(Commands.literal("rc")
+                .then(Commands.literal("generate")
+                        .requires(source -> source.hasPermission(2))
+                        .executes(context -> runGenerate(context, context.getSource().getLevel().getSeed()))
+                        .then(Commands.argument("seed", LongArgumentType.longArg())
+                                .executes(context -> runGenerate(context, LongArgumentType.getLong(context, "seed")))
+                        )
+                )
+                .then(Commands.literal("clear")
+                        .requires(source -> source.hasPermission(2))
+                        .executes(RandomCraftWorldEvents::runClear)
+                )
+                .then(Commands.literal("seed")
+                        .requires(source -> true)
+                        .executes(RandomCraftWorldEvents::runGetSeed)
+                )
+        ));
+    }
+
+    private static int runGenerate(CommandContext<CommandSourceStack> context, long seed) {
+        MinecraftServer server = context.getSource().getServer();
+        ServerLevel world = context.getSource().getLevel();
+
+        context.getSource().sendSuccess(() -> Component.translatable("message.random_crafts.generate",
+                Component.literal(String.valueOf(seed)).withStyle(ChatFormatting.GOLD)), true);
+
+        world.getGameRules().getRule(RandomCraftsGameRules.RANDOMIZE_CRAFTS).set(true, server);
+        generateRandomCrafts(server, world, seed);
+
+        RandomCraftsState state = RandomCraftsState.get(world);
+        state.applied = true;
+        state.usedSeed = seed;
+        state.setDirty();
+
+        server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "reload");
+        return 1;
+    }
+
+    private static int runClear(CommandContext<CommandSourceStack> context) {
+        MinecraftServer server = context.getSource().getServer();
+        ServerLevel world = context.getSource().getLevel();
+        File worldFolder = server.getWorldPath(LevelResource.ROOT).toFile();
+
+        RandomCraftsDatapack.clear(worldFolder);
+        world.getGameRules().getRule(RandomCraftsGameRules.RANDOMIZE_CRAFTS).set(false, server);
+
+        RandomCraftsState state = RandomCraftsState.get(world);
+        state.applied = false;
+        state.setDirty();
+
+        context.getSource().sendSuccess(() -> Component.translatable("message.random_crafts.clear"), true);
+        server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "reload");
+        return 1;
+    }
+
+    private static int runGetSeed(CommandContext<CommandSourceStack> context) {
+        RandomCraftsState state = RandomCraftsState.get(context.getSource().getLevel());
+        if (!state.applied) {
+            context.getSource().sendFailure(Component.translatable("message.random_crafts.no_active"));
+            return 0;
+        }
+        context.getSource().sendSuccess(() -> Component.translatable("message.random_crafts.get_seed",
+                Component.literal(String.valueOf(state.usedSeed)).withStyle(ChatFormatting.GOLD)), false);
+        return 1;
     }
 
     private static void onServerStarted(MinecraftServer server) {
         ServerLevel world = server.overworld();
-
         boolean enabled = world.getGameRules().getBoolean(RandomCraftsGameRules.RANDOMIZE_CRAFTS);
-
-        if (!enabled) {
-            LOGGER.info("RandomCraft disabled via gamerule");
-            return;
-        }
-
         RandomCraftsState state = RandomCraftsState.get(world);
 
-        if (state.applied) {
-            LOGGER.info("RandomCraft already applied for this world");
-            return;
+        if (enabled && !state.applied) {
+            LOGGER.info("Applying RandomCraft for the first time via GameRule");
+            long seed = world.getSeed();
+            generateRandomCrafts(server, world, seed);
+            state.applied = true;
+            state.usedSeed = seed;
+            state.setDirty();
+            server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "reload");
         }
-
-        LOGGER.info("Applying RandomCraft for the first time");
-
-        generateRandomCrafts(server, world);
-
-        state.applied = true;
-        state.setDirty();
-
-        LOGGER.info("Reloading datapacks");
-        server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "reload");
     }
 
-    private static void generateRandomCrafts(MinecraftServer server, ServerLevel world) {
+    private static void generateRandomCrafts(MinecraftServer server, ServerLevel world, long seed) {
         File worldFolder = server.getWorldPath(LevelResource.ROOT).toFile();
         RecipeManager recipeManager = world.getRecipeManager();
 
@@ -84,6 +144,7 @@ public class RandomCraftWorldEvents {
 
         LOGGER.info("Extracted {} original recipes", vanillaRecipes.size());
 
+        vanillaRecipes.sort(Comparator.comparing(VanillaRecipeData::id));
         RecipeGraph graph = CoreGraphBuilder.build(vanillaRecipes);
 
         Map<Item, Integer> tierMap = TierCalculator.calculateTier(vanillaRecipes);
@@ -92,7 +153,7 @@ public class RandomCraftWorldEvents {
             graph.setTier(coreItem, Objects.requireNonNullElse(tier, 0));
         });
 
-        RecipeGenerator generator = new RecipeGenerator(graph, world.getSeed());
+        RecipeGenerator generator = new RecipeGenerator(graph, seed);
         int generated = 0;
 
         for (CoreRecipe original : graph.getAllRecipes()) {

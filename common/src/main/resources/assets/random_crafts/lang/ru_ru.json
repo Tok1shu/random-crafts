@@ -2,5 +2,9 @@
   "modmenu.nameTranslation.random-craft": "Random Crafts",
   "modmenu.descriptionTranslation.random-craft": "Рандомизирует крафты для каждого мира! Да начнётся хаос...",
   "gamerule.randomizeCrafts": "Случайный крафт",
-  "gamerule.randomizeCrafts.description": "Случайно изменяет рецепты крафта при создании мира"
+  "gamerule.randomizeCrafts.description": "Случайно изменяет рецепты крафта при создании мира",
+  "message.random_crafts.generate": "Генерация случайных рецептов с сидом: %s",
+  "message.random_crafts.clear": "RandomCrafts отключен и очищен. Перезагрузка...",
+  "message.random_crafts.get_seed": "Текущий сид RandomCrafts: %s",
+  "message.random_crafts.no_active": "RandomCrafts не активирован в этом мире."
 }

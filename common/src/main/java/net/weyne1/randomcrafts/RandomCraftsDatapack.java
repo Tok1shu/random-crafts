@@ -22,43 +22,51 @@ public class RandomCraftsDatapack {
 
     public static void generate(File worldFolder, RecipeGraph graph) {
         File datapackRoot = new File(worldFolder, "datapacks/" + DATAPACK_NAME);
+        // Очистка старого содержимого
+        clear(worldFolder);
 
-        if (datapackRoot.exists()) {
-            LOGGER.info("Datapack '{}' already exists, skipping generation", DATAPACK_NAME);
+        if (!datapackRoot.exists() && !datapackRoot.mkdirs()) {
+            LOGGER.error("CRITICAL: Could not create datapack directory: {}", datapackRoot.getAbsolutePath());
             return;
         }
-
-        if (!datapackRoot.mkdirs()) {
-            LOGGER.error("Failed to create datapack root: {}", datapackRoot);
-            return;
-        }
-
-        LOGGER.info("Generating datapack '{}'", DATAPACK_NAME);
 
         try {
             writePackMeta(datapackRoot);
-
             File recipesFolder = new File(datapackRoot, "data/minecraft/recipe");
-            if (!recipesFolder.mkdirs()) {
-                LOGGER.error("Failed to create recipe folder");
+
+            if (!recipesFolder.exists() && !recipesFolder.mkdirs()) {
+                LOGGER.error("Could not create recipe folder: {}", recipesFolder.getAbsolutePath());
                 return;
             }
 
-            int generated = 0;
-
             for (CoreRecipe recipe : graph.getAllRecipes()) {
                 if (recipe.inputs().isEmpty()) continue;
-
-                if (writeRecipeJson(recipe, recipesFolder)) {
-                    generated++;
-                }
+                writeRecipeJson(recipe, recipesFolder);
             }
-
-            LOGGER.info("Generated {} random recipes", generated);
-
         } catch (Exception e) {
             LOGGER.error("Datapack generation failed", e);
         }
+    }
+
+    public static void clear(File worldFolder) {
+        File datapackRoot = new File(worldFolder, "datapacks/" + DATAPACK_NAME);
+        if (datapackRoot.exists()) {
+            if (deleteDirectory(datapackRoot)) {
+                LOGGER.info("Datapack '{}' successfully removed", DATAPACK_NAME);
+            } else {
+                LOGGER.warn("Failed to fully remove datapack '{}'. Some files might remain.", DATAPACK_NAME);
+            }
+        }
+    }
+
+    private static boolean deleteDirectory(File file) {
+        File[] contents = file.listFiles();
+        if (contents != null) {
+            for (File f : contents) {
+                if (!deleteDirectory(f)) return false;
+            }
+        }
+        return file.delete();
     }
 
     private static void writePackMeta(File root) throws IOException {
@@ -77,9 +85,9 @@ public class RandomCraftsDatapack {
         }
     }
 
-    private static boolean writeRecipeJson(CoreRecipe recipe, File recipesFolder) {
+    private static void writeRecipeJson(CoreRecipe recipe, File recipesFolder) {
         Item outputItem = recipe.output().vanillaItem();
-        if (outputItem == Items.AIR) return false;
+        if (outputItem == Items.AIR) return;
 
         ResourceLocation outputId = BuiltInRegistries.ITEM.getKey(outputItem);
 
@@ -105,7 +113,7 @@ public class RandomCraftsDatapack {
             ingredients.add(Map.of("item", id.toString()));
         }
 
-        if (ingredients.isEmpty()) return false;
+        if (ingredients.isEmpty()) return;
 
         json.put("ingredients", ingredients);
 
@@ -122,9 +130,7 @@ public class RandomCraftsDatapack {
                     .toJson(json, writer);
         } catch (IOException e) {
             LOGGER.error("Failed to write recipe {}", fileName, e);
-            return false;
         }
 
-        return true;
     }
 }
