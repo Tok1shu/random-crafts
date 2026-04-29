@@ -59,6 +59,11 @@ public class RandomCraftsDatapack {
         }
     }
 
+    public static boolean exists(File worldFolder) {
+        File packFolder = new File(worldFolder, "datapacks/" + DATAPACK_NAME);
+        return packFolder.exists() && packFolder.isDirectory();
+    }
+
     private static boolean deleteDirectory(File file) {
         File[] contents = file.listFiles();
         if (contents != null) {
@@ -90,47 +95,54 @@ public class RandomCraftsDatapack {
         if (outputItem == Items.AIR) return;
 
         ResourceLocation outputId = BuiltInRegistries.ITEM.getKey(outputItem);
-
         String raw = recipe.id();
-
-        // Обработка имени файла
-        String fileName = raw.contains(":")
-                ? raw.split(":")[1]
-                : raw;
-
-        fileName += ".json";
+        String fileName = (raw.contains(":") ? raw.split(":")[1] : raw) + ".json";
         File file = new File(recipesFolder, fileName);
 
         Map<String, Object> json = new LinkedHashMap<>();
-        json.put("type", "minecraft:crafting_shapeless");
 
-        List<Map<String, Object>> ingredients = new ArrayList<>();
-        for (CoreItem ci : recipe.inputs()) {
-            Item item = ci.vanillaItem();
-            if (item == Items.AIR) continue;
+        if (recipe.isShapeless()) {
+            json.put("type", "minecraft:crafting_shapeless");
+            List<Map<String, Object>> ingredients = new ArrayList<>();
+            // Для бесформенных просто перечисляем всё, что есть в списке
+            for (CoreItem ci : recipe.inputs()) {
+                ingredients.add(Map.of("item", BuiltInRegistries.ITEM.getKey(ci.vanillaItem()).toString()));
+            }
+            json.put("ingredients", ingredients);
+        } else {
+            json.put("type", "minecraft:crafting_shaped");
+            json.put("pattern", recipe.patternLayout());
 
-            ResourceLocation id = BuiltInRegistries.ITEM.getKey(item);
-            ingredients.add(Map.of("item", id.toString()));
+            Map<String, Object> keyMap = new LinkedHashMap<>();
+            List<CoreItem> inputs = recipe.inputs();
+            List<String> pattern = recipe.patternLayout();
+
+            // Проходим по паттерну и сопоставляем каждый символ с предметом из списка
+            int inputIndex = 0;
+            for (String row : pattern) {
+                for (char c : row.toCharArray()) {
+                    if (c == ' ') continue;
+
+                    String symbol = String.valueOf(c);
+                    if (!keyMap.containsKey(symbol) && inputIndex < inputs.size()) {
+                        Item item = inputs.get(inputIndex).vanillaItem();
+                        keyMap.put(symbol, Map.of("item", BuiltInRegistries.ITEM.getKey(item).toString()));
+                    }
+                    inputIndex++;
+                }
+            }
+            json.put("key", keyMap);
         }
-
-        if (ingredients.isEmpty()) return;
-
-        json.put("ingredients", ingredients);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", outputId.toString());
         result.put("count", recipe.outputCount());
-
         json.put("result", result);
 
         try (Writer writer = new FileWriter(file)) {
-            new GsonBuilder()
-                    .setPrettyPrinting()
-                    .create()
-                    .toJson(json, writer);
+            new GsonBuilder().setPrettyPrinting().create().toJson(json, writer);
         } catch (IOException e) {
             LOGGER.error("Failed to write recipe {}", fileName, e);
         }
-
     }
 }

@@ -15,138 +15,196 @@ import net.weyne1.randomcrafts.core.recipe.CoreRecipe;
 import net.weyne1.randomcrafts.core.graph.RecipeGraph;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 import static net.weyne1.randomcrafts.RandomCrafts.LOGGER;
 
 public class RecipeGenerator {
     private final RecipeGraph graph;
     private final Random random;
+    private final GenerationSettings settings;
+    private final Set<String> usedFingerprints = new HashSet<>();
+    private final List<CoreItem> allPossibleIngredients;
 
-    private static final Set<Class<? extends Item>> FORBIDDEN_TYPES = Set.of(
-            ArmorItem.class, DiggerItem.class, SwordItem.class, BoatItem.class,
-            ShieldItem.class, ElytraItem.class, BowItem.class,
-            BedItem.class, CrossbowItem.class, SpyglassItem.class
-    );
-
-    private static final Set<Class<? extends Block>> FORBIDDEN_BLOCK_TYPES = Set.of(
-            AbstractFurnaceBlock.class, CraftingTableBlock.class, EnchantingTableBlock.class,
-            AnvilBlock.class, SmithingTableBlock.class, LoomBlock.class, CartographyTableBlock.class,
-            GrindstoneBlock.class, LecternBlock.class, StonecutterBlock.class, BrewingStandBlock.class,
-            FletchingTableBlock.class, TrappedChestBlock.class, CandleBlock.class
-    );
-
-    public RecipeGenerator(RecipeGraph graph, long seed) {
+    public RecipeGenerator(RecipeGraph graph, long seed, GenerationSettings settings) {
         this.graph = graph;
         this.random = new Random(seed);
+        this.settings = settings;
+        this.allPossibleIngredients = graph.getCoreItemIdMap().values().stream()
+                .sorted(Comparator.comparing(CoreItem::id))
+                .toList();
+    }
+
+    private String getRecipeFingerprint(List<CoreItem> inputs) {
+        return inputs.stream()
+                .map(CoreItem::id)
+                .sorted()
+                .collect(Collectors.joining(","));
     }
 
     public CoreRecipe generateRandomRecipe(CoreRecipe original) {
         if (original == null) return null;
 
-        CoreItem realOutput = graph.getCoreItemById(original.output().id());
-        if (realOutput == null) realOutput = original.output();
+        CoreItem output = graph.getCoreItemById(original.output().id());
+        if (output == null) output = original.output();
 
-        int outputTier = realOutput.tier();
-        int outputCount = original.outputCount();
+        // 1. Подготовка данных
+        List<String> uniqueIngredientIds = original.inputs().stream()
+                .map(CoreItem::id).distinct().sorted().toList();
 
-        // считает группы одинаковых ингредиентов
-        Map<String, Integer> inputCounts = new LinkedHashMap<>();
-        for (CoreItem ci : original.inputs()) {
-            inputCounts.merge(ci.id(), 1, Integer::sum);
-        }
+        boolean isEnderEye = output.vanillaItem() == Items.ENDER_EYE;
+        List<CoreItem> newInputsList;
+        String fingerprint;
+        int attempts = 0;
 
-        List<CoreItem> newInputs = new ArrayList<>();
+        // 2. Основной цикл генерации
+        do {
+            Map<String, CoreItem> replacementMap = createReplacementMap(uniqueIngredientIds, output, attempts, isEnderEye);
 
-        for (Map.Entry<String, Integer> entry : inputCounts.entrySet()) {
-            int count = entry.getValue();
-
-            int minTier;
-            int maxTier;
-
-            if (outputTier <= 2) {
-                minTier = -1;
-                maxTier = 2;
-            } else {
-                minTier = Math.max(-1, outputTier - 4);
-                maxTier = outputTier - 1;
-            }
-
-            CoreItem finalRealOutput = realOutput;
-            List<CoreItem> candidates = graph.getCoreItemIdMap().values().stream()
-                    .filter(i -> i.vanillaItem() != Items.AIR)
-                    .filter(i -> i.tier() >= minTier && i.tier() <= maxTier)
-                    .filter(i -> !i.id().equals(finalRealOutput.id()))
-                    .filter(i -> !isForbiddenIngredient(i.vanillaItem()))
+            newInputsList = original.inputs().stream()
+                    .map(ing -> replacementMap.get(ing.id()))
                     .toList();
 
-            CoreItem chosen;
-            if (candidates.isEmpty()) {
-                LOGGER.warn("No candidates for output tier {}! Min: {}, Max: {}", outputTier, minTier, maxTier);
-                chosen = graph.getCoreItemById(entry.getKey());
-                if (chosen == null) continue;
-            } else {
-                chosen = candidates.get(random.nextInt(candidates.size()));
-            }
+            fingerprint = getRecipeFingerprint(newInputsList);
+            attempts++;
 
-            CoreItem realChosen = graph.getCoreItemById(chosen.id());
-            if (realChosen == null) realChosen = chosen;
+        } while (usedFingerprints.contains(fingerprint) && attempts < 10);
 
-            for (int i = 0; i < count; i++) {
-                newInputs.add(realChosen);
-            }
+        // 3. Финальная проверка
+        if (usedFingerprints.contains(fingerprint)) {
+            LOGGER.warn("Could not find unique recipe for {} after {} attempts.", output.id(), attempts);
+            return original;
         }
 
-
-        return new CoreRecipe(original.id(), realOutput, newInputs, outputCount);
+        usedFingerprints.add(fingerprint);
+        return new CoreRecipe(original.id(), output, newInputsList, original.outputCount(),
+                original.isShapeless(), original.patternLayout());
     }
 
-    private static boolean isForbiddenIngredient(Item item) {
+    /**
+     * Создает карту замен: Старый ID -> Новый случайный предмет
+     */
+    private Map<String, CoreItem> createReplacementMap(List<String> uniqueIds, CoreItem output, int bonusSpread, boolean isEnderEye) {
+        Map<String, CoreItem> map = new HashMap<>();
+
+        for (String oldId : uniqueIds) {
+            List<CoreItem> candidates = findCandidatesFor(output, bonusSpread, isEnderEye);
+
+            CoreItem chosen = candidates.isEmpty()
+                    ? graph.getCoreItemById(oldId) // Fallback на оригинал
+                    : candidates.get(random.nextInt(candidates.size()));
+
+            map.put(oldId, chosen);
+        }
+        return map;
+    }
+
+    /**
+     * Ищет подходящие предметы с учетом тиров, фильтров и адаптивного поиска вниз
+     */
+    private List<CoreItem> findCandidatesFor(CoreItem output, int bonusSpread, boolean isEnderEye) {
+        int outTier = output.tier();
+        int minT, maxT;
+
+        if (settings.useTiers()) {
+            if (outTier <= 2) {
+                minT = -1;
+                maxT = 2;
+            } else {
+                minT = Math.max(-1, outTier - (settings.tierSpread() + bonusSpread));
+                maxT = outTier - 1;
+            }
+        } else {
+            minT = -1;
+            maxT = 100;
+        }
+
+        // Адаптивный поиск (спуск по тирам вниз, если пусто)
+        for (int fallback = 0; fallback < 20; fallback++) {
+            int currentMin = Math.max(-1, minT - fallback);
+
+            List<CoreItem> found = allPossibleIngredients.stream()
+                    .filter(i -> i.tier() >= currentMin && i.tier() <= maxT)
+                    .filter(i -> !i.id().equals(output.id())) // Рекурсия
+                    .filter(i -> isAllowedAsIngredient(i.vanillaItem())) // GameRules
+                    .filter(i -> !isEnderEye || i.tier() != 14) // Спец условие для Ока
+                    .toList();
+
+            if (!found.isEmpty()) return found;
+        }
+
+        return Collections.emptyList();
+    }
+
+    /**
+     * Центральный фильтр. Проверяет предмет на основе активных GameRules.
+     */
+    private boolean isAllowedAsIngredient(Item item) {
+        if (settings.excludeTools() && isToolOrArmor(item)) return false;
+
+        if (settings.excludeFunctional() && isFunctionalBlock(item)) return false;
+
+        return !settings.excludeColors() || !isColorVariant(item);
+    }
+
+    // --- Группы запрещенных классов ---
+
+    private static final Set<Class<? extends Item>> TOOLS_AND_ARMOR = Set.of(
+            ArmorItem.class, DiggerItem.class, SwordItem.class, ShieldItem.class,
+            ElytraItem.class, BowItem.class, CrossbowItem.class, TridentItem.class,
+            SpyglassItem.class, ProjectileWeaponItem.class, FishingRodItem.class
+    );
+
+    private static final Set<Class<? extends Block>> FUNCTIONAL_BLOCKS = Set.of(
+            AbstractFurnaceBlock.class, CraftingTableBlock.class, EnchantingTableBlock.class,
+            AnvilBlock.class, SmithingTableBlock.class, LoomBlock.class, CartographyTableBlock.class,
+            GrindstoneBlock.class, LecternBlock.class, StonecutterBlock.class, BrewingStandBlock.class,
+            FletchingTableBlock.class, TrappedChestBlock.class, BeaconBlock.class, BarrelBlock.class
+    );
+
+    // --- Вспомогательные проверки ---
+
+    private boolean isToolOrArmor(Item item) {
+        return TOOLS_AND_ARMOR.stream().anyMatch(clazz -> clazz.isInstance(item)) || item instanceof BoatItem;
+    }
+
+    private boolean isFunctionalBlock(Item item) {
+        if (item instanceof BlockItem blockItem) {
+            return FUNCTIONAL_BLOCKS.stream().anyMatch(clazz -> clazz.isInstance(blockItem.getBlock())) || item instanceof BedItem;
+        }
+        return false;
+    }
+
+    private boolean isColorVariant(Item item) {
+        // Красители разрешены
+        if (item instanceof DyeItem) return false;
+
         ResourceLocation id = BuiltInRegistries.ITEM.getKey(item);
         String path = id.getPath();
 
-        // Предметы
-        if (FORBIDDEN_TYPES.stream().anyMatch(clazz -> clazz.isInstance(item))) {
-            return true;
-        }
+        // Список всех цветов для поиска в ID
+        boolean hasColorName = path.matches(".*(orange|magenta|light_blue|yellow|lime|pink|gray|light_gray|cyan|purple|blue|brown|green|red|black).*");
+        if (!hasColorName) return false;
 
-        // Цветные баннеры
-        if (item instanceof BannerItem) {
-            return !path.equals("white_banner");
-        }
+        // 1. Баннеры, кровати
+        if (item instanceof BannerItem || item instanceof BedItem) return true;
 
-        if (path.contains("concrete")) {
-            return !path.equals("white_concrete") && !path.equals("white_concrete_powder");
-        }
-
+        // 2. Блоки
         if (item instanceof BlockItem blockItem) {
             Block block = blockItem.getBlock();
-            BlockState defaultState = block.defaultBlockState();
+            BlockState state = block.defaultBlockState();
 
-            // Блоки
-            if (FORBIDDEN_BLOCK_TYPES.stream().anyMatch(clazz -> clazz.isInstance(block))) {
-                return true;
-            }
-
-            // Цветное стекло и панели
-            if (block instanceof StainedGlassBlock || block instanceof StainedGlassPaneBlock) {
-                return true;
-            }
-
-            // Цветная шерсть
-            if (defaultState.is(BlockTags.WOOL)) {
-                return !path.equals("white_wool");
-            }
-
-            // Цветные ковры
-            if (block instanceof CarpetBlock) {
-                return !path.equals("white_carpet");
-            }
-
-            // Цветная терракота
-            if (defaultState.is(BlockTags.TERRACOTTA)) {
-                return !path.equals("terracotta");
-            }
+            return block instanceof StainedGlassBlock ||
+                    block instanceof StainedGlassPaneBlock ||
+                    block instanceof ConcretePowderBlock ||
+                    block instanceof CarpetBlock ||
+                    block instanceof CandleBlock ||
+                    state.is(BlockTags.WOOL) ||
+                    state.is(BlockTags.TERRACOTTA) ||
+                    path.contains("concrete") ||
+                    path.contains("shulker_box");
         }
+
         return false;
     }
 }

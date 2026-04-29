@@ -8,5 +8,7 @@ public record VanillaRecipeData(
         String id,
         Item output,
         int outputCount,
-        List<Item> inputs
+        List<Item> inputs,
+        boolean isShapeless,
+        List<String> patternLayout
 ) {}

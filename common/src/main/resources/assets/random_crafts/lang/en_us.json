@@ -1,10 +1,23 @@
 {
   "modmenu.nameTranslation.random-craft": "Random Crafts",
   "modmenu.descriptionTranslation.random-craft": "Let's randomize crafts for each world! Let the chaos begin...",
-  "gamerule.randomizeCrafts": "Randomize crafting",
+  "gamerule.randomizeCrafts": "[RC] Randomize crafting",
   "gamerule.randomizeCrafts.description": "Randomizes all crafting recipes when the world is created",
-  "message.random_crafts.generate": "Generating random recipes with seed: %s",
-  "message.random_crafts.clear": "RandomCrafts disabled and cleared. Reloading...",
-  "message.random_crafts.get_seed": "Current RandomCrafts seed: %s",
-  "message.random_crafts.no_active": "RandomCrafts is not active in this world."
+  "gamerule.rcBalancedTiers": "[RC] Balanced Tiers",
+  "gamerule.rcBalancedTiers.description": "Recipes will be generated according to tiers (levels) to ensure game balance. Disabling this rule will make the game more hardcore!",
+  "gamerule.rcExcludeColorBlocks": "[RC] Exclude Color Blocks",
+  "gamerule.rcExcludeColorBlocks.description": "Colored variants (wool, glass, concrete, etc.) will not be used as ingredients.",
+  "gamerule.rcExcludeToolsArmor": "[RC] Exclude Tools & Armor",
+  "gamerule.rcExcludeToolsArmor.description": "Tools and armor will not be used as ingredients in recipes.",
+  "gamerule.rcExcludeFunctionalBlocks": "[RC] Exclude Functional Blocks",
+  "gamerule.rcExcludeFunctionalBlocks.description": "Crafting tables, furnaces and other functional blocks will not be used as ingredients.",
+  "gamerule.rcTierSpread": "[RC] Random Spread",
+  "gamerule.rcTierSpread.description": "[1-20] Higher values increase the chance that end-game items will require basic materials. Only works when 'Balanced Tiers' is enabled.",
+  "message.random_crafts.short_generate_started": "[Random Crafts] Starting generation... Please wait.",
+  "message.random_crafts.generate_started": "[Random Crafts] Cleaning up and reloading base recipes... Please wait.",
+  "message.random_crafts.generate_success": "[Random Crafts] Successfully generated recipes with seed: %s! Reloading world...",
+  "message.random_crafts.clear": "[Random Crafts] RandomCrafts disabled and cleared. Reloading...",
+  "message.random_crafts.get_seed": "[Random Crafts] Current random recipes seed: %s",
+  "message.random_crafts.no_active": "[Random Crafts] RandomCrafts is not active in this world.",
+  "message.random_crafts.rule_changed": "[Random Crafts] Gamerule %s has been changed. Use /rc generate to apply changes."
 }

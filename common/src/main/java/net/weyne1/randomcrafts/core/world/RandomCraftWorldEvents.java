@@ -7,6 +7,8 @@ import dev.architectury.event.events.common.LifecycleEvent;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.core.NonNullList;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -20,6 +22,7 @@ import net.weyne1.randomcrafts.RandomCraftsDatapack;
 import net.weyne1.randomcrafts.RandomCraftsGameRules;
 import net.weyne1.randomcrafts.RandomCraftsState;
 import net.weyne1.randomcrafts.core.generator.RecipeGenerator;
+import net.weyne1.randomcrafts.core.generator.GenerationSettings;
 import net.weyne1.randomcrafts.core.graph.CoreGraphBuilder;
 import net.weyne1.randomcrafts.core.graph.RecipeGraph;
 import net.weyne1.randomcrafts.core.recipe.CoreRecipe;
@@ -28,6 +31,7 @@ import net.weyne1.randomcrafts.core.tier.TierCalculator;
 
 import java.io.File;
 import java.util.*;
+import java.util.stream.Collectors;
 
 import static net.weyne1.randomcrafts.RandomCrafts.LOGGER;
 
@@ -58,19 +62,39 @@ public class RandomCraftWorldEvents {
     private static int runGenerate(CommandContext<CommandSourceStack> context, long seed) {
         MinecraftServer server = context.getSource().getServer();
         ServerLevel world = context.getSource().getLevel();
+        File worldFolder = server.getWorldPath(LevelResource.ROOT).toFile();
 
-        context.getSource().sendSuccess(() -> Component.translatable("message.random_crafts.generate",
-                Component.literal(String.valueOf(seed)).withStyle(ChatFormatting.GOLD)), true);
+        boolean hasPreviousData = RandomCraftsDatapack.exists(worldFolder);
 
-        world.getGameRules().getRule(RandomCraftsGameRules.RANDOMIZE_CRAFTS).set(true, server);
-        generateRandomCrafts(server, world, seed);
+        Runnable generationTask = () -> {
+            generateRandomCrafts(server, world, seed);
 
-        RandomCraftsState state = RandomCraftsState.get(world);
-        state.applied = true;
-        state.usedSeed = seed;
-        state.setDirty();
+            RandomCraftsState state = RandomCraftsState.get(world);
+            state.applied = true;
+            state.usedSeed = seed;
+            state.setDirty();
 
-        server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "reload");
+            var rule = world.getGameRules().getRule(RandomCraftsGameRules.RANDOMIZE_CRAFTS);
+            if (!rule.get()) rule.set(true, null);
+
+            context.getSource().sendSuccess(() -> Component.translatable("message.random_crafts.generate_success",
+                    Component.literal(String.valueOf(seed)).withStyle(ChatFormatting.GOLD)), true);
+
+            // Второй (или единственный) релоад: применяет новые рецепты
+            server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "reload");
+        };
+
+        if (hasPreviousData) {
+            context.getSource().sendSuccess(() -> Component.translatable("message.random_crafts.generate_started"), true);
+            RandomCraftsDatapack.clear(worldFolder);
+            // Релоад нужен, чтобы выгрузить старое
+            server.reloadResources(server.getPackRepository().getSelectedIds()).thenAccept(v -> server.execute(generationTask));
+        } else {
+            // Датапака не было, можно генерить сразу без лишнего релоада
+            context.getSource().sendSuccess(() -> Component.translatable("message.random_crafts.short_generate_started"), true);
+            generationTask.run();
+        }
+
         return 1;
     }
 
@@ -108,7 +132,7 @@ public class RandomCraftWorldEvents {
         RandomCraftsState state = RandomCraftsState.get(world);
 
         if (enabled && !state.applied) {
-            LOGGER.info("Applying RandomCraft for the first time via GameRule");
+            LOGGER.info("Applying RandomCraft for the first time via GameRule for world: {}", world.dimension().location());
             long seed = world.getSeed();
             generateRandomCrafts(server, world, seed);
             state.applied = true;
@@ -119,6 +143,7 @@ public class RandomCraftWorldEvents {
     }
 
     private static void generateRandomCrafts(MinecraftServer server, ServerLevel world, long seed) {
+        GenerationSettings settings = GenerationSettings.fromWorld(world);
         File worldFolder = server.getWorldPath(LevelResource.ROOT).toFile();
         RecipeManager recipeManager = world.getRecipeManager();
 
@@ -129,56 +154,111 @@ public class RandomCraftWorldEvents {
         for (RecipeHolder<CraftingRecipe> holder : recipeManager.getAllRecipesFor(RecipeType.CRAFTING)) {
             ResourceLocation recipeId = holder.id();
             CraftingRecipe recipe = holder.value();
-
             ItemStack result = recipe.getResultItem(world.registryAccess());
 
             if (result.isEmpty() || result.is(Items.AIR)) continue;
+
+            List<String> patternLayout = new ArrayList<>();
+            List<Item> recipeInputs = new ArrayList<>();
+            boolean isShapeless = true;
+
+            // Для рецептов с паттерном
+            if (recipe instanceof ShapedRecipe shaped) {
+                isShapeless = false;
+                int width = shaped.getWidth();
+                int height = shaped.getHeight();
+                NonNullList<Ingredient> ingredients = shaped.getIngredients();
+
+                // Карта для сопоставления: ингредиент ориг рецепта -> (A, B, C...)
+                Map<Ingredient, Character> ingToChar = new HashMap<>();
+                char nextSymbol = 'A';
+
+                for (int y = 0; y < height; y++) {
+                    StringBuilder row = new StringBuilder();
+                    for (int x = 0; x < width; x++) {
+                        Ingredient ing = ingredients.get(y * width + x);
+                        if (ing.isEmpty()) {
+                            row.append(" ");
+                        } else {
+                            // Логика назначения символа
+                            if (!ingToChar.containsKey(ing)) {
+                                ingToChar.put(ing, nextSymbol++);
+                            }
+                            char symbol = ingToChar.get(ing);
+                            row.append(symbol);
+
+                            Item origItem = Arrays.stream(ing.getItems())
+                                    .map(ItemStack::getItem)
+                                    .min(Comparator.comparing(i -> BuiltInRegistries.ITEM.getKey(i).toString()))
+                                    .orElse(Items.AIR);
+                            recipeInputs.add(origItem);
+                        }
+                    }
+                    patternLayout.add(row.toString());
+                }
+            } else {
+                recipeInputs = recipe.getIngredients().stream()
+                        .filter(ing -> !ing.isEmpty())
+                        .map(ing -> ing.getItems()[0].getItem())
+                        .collect(Collectors.toCollection(ArrayList::new));
+
+                recipeInputs.sort(Comparator.comparing(i -> BuiltInRegistries.ITEM.getKey(i).toString()));
+            }
 
             vanillaRecipes.add(new VanillaRecipeData(
                     recipeId.toString(),
                     result.getItem(),
                     result.getCount(),
-                    getIngredientsList(recipe)
-            ));
+                    recipeInputs,
+                    isShapeless,
+                    patternLayout));
         }
 
-        LOGGER.info("Extracted {} original recipes", vanillaRecipes.size());
+        LOGGER.info("Extracted {} recipes for shuffle pool", vanillaRecipes.size());
 
+        // Сортировка для одинакового графа на одном и том же сиде
         vanillaRecipes.sort(Comparator.comparing(VanillaRecipeData::id));
-        RecipeGraph graph = CoreGraphBuilder.build(vanillaRecipes);
 
+        // Сбор графа и расчет тиров
+        RecipeGraph graph = CoreGraphBuilder.build(vanillaRecipes);
         Map<Item, Integer> tierMap = TierCalculator.calculateTier(vanillaRecipes);
+
         graph.getCoreItemIdMap().values().forEach(coreItem -> {
             Integer tier = tierMap.get(coreItem.vanillaItem());
             graph.setTier(coreItem, Objects.requireNonNullElse(tier, 0));
         });
 
-        RecipeGenerator generator = new RecipeGenerator(graph, seed);
-        int generated = 0;
+        // Генерация
+        RecipeGenerator generator = new RecipeGenerator(graph, seed, settings);
+        int generatedCount = 0;
 
-        for (CoreRecipe original : graph.getAllRecipes()) {
-            CoreRecipe random = generator.generateRandomRecipe(original);
-            if (random == null || random.inputs().isEmpty()) continue;
+        List<CoreRecipe> sortedRecipes = new ArrayList<>(graph.getAllRecipes());
+        sortedRecipes.sort(Comparator.comparing(CoreRecipe::id));
 
-            graph.addRecipe(random);
-            generated++;
+        for (CoreRecipe original : sortedRecipes) {
+            CoreRecipe randomRecipe = generator.generateRandomRecipe(original);
+            if (randomRecipe != null && !randomRecipe.inputs().isEmpty()) {
+                graph.addRecipe(randomRecipe);
+                generatedCount++;
+            }
         }
 
-        LOGGER.info("Generated {} random recipes", generated);
+        LOGGER.info("Successfully randomized {} recipes using seed {}", generatedCount, seed);
 
+        // Сохранение в датапак
         RandomCraftsDatapack.generate(worldFolder, graph);
     }
 
     private static List<Item> getIngredientsList(CraftingRecipe recipe) {
         List<Item> inputs = new ArrayList<>();
-
         for (Ingredient ing : recipe.getIngredients()) {
+            if (ing.isEmpty()) continue;
+
             ItemStack[] stacks = ing.getItems();
             if (stacks.length > 0 && !stacks[0].is(Items.AIR)) {
                 inputs.add(stacks[0].getItem());
             }
         }
-
         return inputs;
     }
 }

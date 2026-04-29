@@ -1,10 +1,23 @@
 {
   "modmenu.nameTranslation.random-craft": "Random Crafts",
   "modmenu.descriptionTranslation.random-craft": "Рандомизирует крафты для каждого мира! Да начнётся хаос...",
-  "gamerule.randomizeCrafts": "Случайный крафт",
+  "gamerule.randomizeCrafts": "[RC] Случайные крафты",
   "gamerule.randomizeCrafts.description": "Случайно изменяет рецепты крафта при создании мира",
-  "message.random_crafts.generate": "Генерация случайных рецептов с сидом: %s",
-  "message.random_crafts.clear": "RandomCrafts отключен и очищен. Перезагрузка...",
-  "message.random_crafts.get_seed": "Текущий сид RandomCrafts: %s",
-  "message.random_crafts.no_active": "RandomCrafts не активирован в этом мире."
+  "gamerule.rcBalancedTiers": "[RC] Соблюдать баланс",
+  "gamerule.rcBalancedTiers.description": "Рецепты будут генерироваться по тирам (уровням) для обеспечения баланса игры. Отключение этого правила сделает игру хардкорнее!",
+  "gamerule.rcExcludeColorBlocks": "[RC] Исключить цветные блоки",
+  "gamerule.rcExcludeColorBlocks.description": "Цветные варианты блоков (шерсти, стекла, бетона и др.) не будут ингредиентами в рецептах.",
+  "gamerule.rcExcludeToolsArmor": "[RC] Исключить инструменты и броню",
+  "gamerule.rcExcludeToolsArmor.description": "Инструменты и броня не будут ингредиентами в рецептах.",
+  "gamerule.rcExcludeFunctionalBlocks": "[RC] Исключить функциональные блоки",
+  "gamerule.rcExcludeFunctionalBlocks.description": "Верстаки, печки и прочие функциональные блоки не будут ингредиентами в рецептах.",
+  "gamerule.rcTierSpread": "[RC] Разброс рандома",
+  "gamerule.rcTierSpread.description": "[1-20] Чем выше это значение, тем больше шанс на то, что элитные вещи могут потребовать грязь. Работает только с включенным правилом 'Соблюдать баланс'.",
+  "message.random_crafts.short_generate_started": "[Random Crafts] Запуск генерации... Пожалуйста, подождите.",
+  "message.random_crafts.generate_started": "[Random Crafts] Очистка и подготовка базовых рецептов... Пожалуйста, подождите.",
+  "message.random_crafts.generate_success": "[Random Crafts] Рецепты успешно созданы с сидом: %s! Перезагрузка...",
+  "message.random_crafts.clear": "[Random Crafts] RandomCrafts отключен и очищен. Перезагрузка...",
+  "message.random_crafts.get_seed": "[Random Crafts] Текущий сид рандомных рецептов: %s",
+  "message.random_crafts.no_active": "[Random Crafts] RandomCrafts не активирован в этом мире.",
+  "message.random_crafts.rule_changed": "[Random Crafts] Правило %s было изменено. Чтобы применить настройки, используйте /rc generate"
 }
