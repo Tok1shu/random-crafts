@@ -152,7 +152,7 @@ public class RecipeGenerator {
     private static final Set<Class<? extends Item>> TOOLS_AND_ARMOR = Set.of(
             ArmorItem.class, DiggerItem.class, SwordItem.class, ShieldItem.class,
             ElytraItem.class, BowItem.class, CrossbowItem.class, TridentItem.class,
-            SpyglassItem.class, ProjectileWeaponItem.class, FishingRodItem.class
+            SpyglassItem.class, ProjectileWeaponItem.class, FishingRodItem.class, BrushItem.class
     );
 
     private static final Set<Class<? extends Block>> FUNCTIONAL_BLOCKS = Set.of(

@@ -62,26 +62,26 @@ public class RandomCraftWorldEvents {
     private static int runGenerate(CommandContext<CommandSourceStack> context, long seed) {
         MinecraftServer server = context.getSource().getServer();
         ServerLevel world = context.getSource().getLevel();
-        File worldFolder = server.getWorldPath(LevelResource.ROOT).toFile();
+                    File worldFolder = server.getWorldPath(LevelResource.ROOT).toFile();
 
-        boolean hasPreviousData = RandomCraftsDatapack.exists(worldFolder);
+            boolean hasPreviousData = RandomCraftsDatapack.exists(worldFolder);
 
-        Runnable generationTask = () -> {
-            generateRandomCrafts(server, world, seed);
+            Runnable generationTask = () -> {
+                generateRandomCrafts(server, world, seed);
 
-            RandomCraftsState state = RandomCraftsState.get(world);
-            state.applied = true;
-            state.usedSeed = seed;
-            state.setDirty();
+                RandomCraftsState state = RandomCraftsState.get(world);
+                state.applied = true;
+                state.usedSeed = seed;
+                state.setDirty();
 
-            var rule = world.getGameRules().getRule(RandomCraftsGameRules.RANDOMIZE_CRAFTS);
-            if (!rule.get()) rule.set(true, null);
+                var rule = world.getGameRules().getRule(RandomCraftsGameRules.RANDOMIZE_CRAFTS);
+                if (!rule.get()) rule.set(true, null);
 
-            context.getSource().sendSuccess(() -> Component.translatable("message.random_crafts.generate_success",
-                    Component.literal(String.valueOf(seed)).withStyle(ChatFormatting.GOLD)), true);
+                context.getSource().sendSuccess(() -> Component.translatable("message.random_crafts.generate_success",
+                        Component.literal(String.valueOf(seed)).withStyle(ChatFormatting.GOLD)), true);
 
-            // Второй (или единственный) релоад: применяет новые рецепты
-            server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "reload");
+                // Второй (или единственный) релоад: применяет новые рецепты
+                server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "reload");
         };
 
         if (hasPreviousData) {
@@ -145,120 +145,108 @@ public class RandomCraftWorldEvents {
     private static void generateRandomCrafts(MinecraftServer server, ServerLevel world, long seed) {
         GenerationSettings settings = GenerationSettings.fromWorld(world);
         File worldFolder = server.getWorldPath(LevelResource.ROOT).toFile();
-        RecipeManager recipeManager = world.getRecipeManager();
 
+        // Извлечение данных (Vanilla -> Внутренний формат мода)
         LOGGER.info("Extracting original recipes...");
-
-        List<VanillaRecipeData> vanillaRecipes = new ArrayList<>();
-
-        for (RecipeHolder<CraftingRecipe> holder : recipeManager.getAllRecipesFor(RecipeType.CRAFTING)) {
-            ResourceLocation recipeId = holder.id();
-            CraftingRecipe recipe = holder.value();
-            ItemStack result = recipe.getResultItem(world.registryAccess());
-
-            if (result.isEmpty() || result.is(Items.AIR)) continue;
-
-            List<String> patternLayout = new ArrayList<>();
-            List<Item> recipeInputs = new ArrayList<>();
-            boolean isShapeless = true;
-
-            // Для рецептов с паттерном
-            if (recipe instanceof ShapedRecipe shaped) {
-                isShapeless = false;
-                int width = shaped.getWidth();
-                int height = shaped.getHeight();
-                NonNullList<Ingredient> ingredients = shaped.getIngredients();
-
-                // Карта для сопоставления: ингредиент ориг рецепта -> (A, B, C...)
-                Map<Ingredient, Character> ingToChar = new HashMap<>();
-                char nextSymbol = 'A';
-
-                for (int y = 0; y < height; y++) {
-                    StringBuilder row = new StringBuilder();
-                    for (int x = 0; x < width; x++) {
-                        Ingredient ing = ingredients.get(y * width + x);
-                        if (ing.isEmpty()) {
-                            row.append(" ");
-                        } else {
-                            // Логика назначения символа
-                            if (!ingToChar.containsKey(ing)) {
-                                ingToChar.put(ing, nextSymbol++);
-                            }
-                            char symbol = ingToChar.get(ing);
-                            row.append(symbol);
-
-                            Item origItem = Arrays.stream(ing.getItems())
-                                    .map(ItemStack::getItem)
-                                    .min(Comparator.comparing(i -> BuiltInRegistries.ITEM.getKey(i).toString()))
-                                    .orElse(Items.AIR);
-                            recipeInputs.add(origItem);
-                        }
-                    }
-                    patternLayout.add(row.toString());
-                }
-            } else {
-                recipeInputs = recipe.getIngredients().stream()
-                        .filter(ing -> !ing.isEmpty())
-                        .map(ing -> ing.getItems()[0].getItem())
-                        .collect(Collectors.toCollection(ArrayList::new));
-
-                recipeInputs.sort(Comparator.comparing(i -> BuiltInRegistries.ITEM.getKey(i).toString()));
-            }
-
-            vanillaRecipes.add(new VanillaRecipeData(
-                    recipeId.toString(),
-                    result.getItem(),
-                    result.getCount(),
-                    recipeInputs,
-                    isShapeless,
-                    patternLayout));
-        }
+        List<VanillaRecipeData> vanillaRecipes = world.getRecipeManager()
+                .getAllRecipesFor(RecipeType.CRAFTING)
+                .stream()
+                .map(holder -> convertToVanillaData(holder, world))
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(VanillaRecipeData::id))
+                .toList();
 
         LOGGER.info("Extracted {} recipes for shuffle pool", vanillaRecipes.size());
 
-        // Сортировка для одинакового графа на одном и том же сиде
-        vanillaRecipes.sort(Comparator.comparing(VanillaRecipeData::id));
-
-        // Сбор графа и расчет тиров
+        // Подготовка графа
         RecipeGraph graph = CoreGraphBuilder.build(vanillaRecipes);
-        Map<Item, Integer> tierMap = TierCalculator.calculateTier(vanillaRecipes);
+        applyTiersToGraph(graph, vanillaRecipes);
 
-        graph.getCoreItemIdMap().values().forEach(coreItem -> {
-            Integer tier = tierMap.get(coreItem.vanillaItem());
-            graph.setTier(coreItem, Objects.requireNonNullElse(tier, 0));
-        });
-
-        // Генерация
+        // Генерация новых рецептов
         RecipeGenerator generator = new RecipeGenerator(graph, seed, settings);
-        int generatedCount = 0;
 
-        List<CoreRecipe> sortedRecipes = new ArrayList<>(graph.getAllRecipes());
-        sortedRecipes.sort(Comparator.comparing(CoreRecipe::id));
+        List<CoreRecipe> randomizedRecipes = graph.getAllRecipes().stream()
+                .sorted(Comparator.comparing(CoreRecipe::id))
+                .map(generator::generateRandomRecipe)
+                .filter(r -> r != null && !r.inputs().isEmpty())
+                .toList();
 
-        for (CoreRecipe original : sortedRecipes) {
-            CoreRecipe randomRecipe = generator.generateRandomRecipe(original);
-            if (randomRecipe != null && !randomRecipe.inputs().isEmpty()) {
-                graph.addRecipe(randomRecipe);
-                generatedCount++;
-            }
-        }
+        // Добавляет сгенерированные рецепты обратно в граф для сохранения
+        randomizedRecipes.forEach(graph::addRecipe);
 
-        LOGGER.info("Successfully randomized {} recipes using seed {}", generatedCount, seed);
+        LOGGER.info("Successfully randomized {} recipes using seed {}", randomizedRecipes.size(), seed);
 
         // Сохранение в датапак
         RandomCraftsDatapack.generate(worldFolder, graph);
     }
 
-    private static List<Item> getIngredientsList(CraftingRecipe recipe) {
-        List<Item> inputs = new ArrayList<>();
-        for (Ingredient ing : recipe.getIngredients()) {
-            if (ing.isEmpty()) continue;
+    /**
+     * Превращает технический рецепт Minecraft в простые данные.
+     */
+    private static VanillaRecipeData convertToVanillaData(RecipeHolder<CraftingRecipe> holder, ServerLevel world) {
+        CraftingRecipe recipe = holder.value();
+        ItemStack result = recipe.getResultItem(world.registryAccess());
 
-            ItemStack[] stacks = ing.getItems();
-            if (stacks.length > 0 && !stacks[0].is(Items.AIR)) {
-                inputs.add(stacks[0].getItem());
-            }
+        if (result.isEmpty() || result.is(Items.AIR)) return null;
+
+        List<String> patternLayout = new ArrayList<>();
+        List<Item> recipeInputs = new ArrayList<>();
+        boolean isShapeless = true;
+
+        if (recipe instanceof ShapedRecipe shaped) {
+            isShapeless = false;
+            extractShapedData(shaped, patternLayout, recipeInputs);
+        } else {
+            recipeInputs = recipe.getIngredients().stream()
+                    .filter(ing -> !ing.isEmpty())
+                    .map(ing -> ing.getItems()[0].getItem())
+                    .sorted(Comparator.comparing(i -> BuiltInRegistries.ITEM.getKey(i).toString()))
+                    .collect(Collectors.toCollection(ArrayList::new));
         }
-        return inputs;
+
+        return new VanillaRecipeData(holder.id().toString(), result.getItem(), result.getCount(),
+                recipeInputs, isShapeless, patternLayout);
+    }
+
+    /**
+     * Логика разбора Shaped рецепта
+     */
+    private static void extractShapedData(ShapedRecipe shaped, List<String> pattern, List<Item> inputs) {
+        int width = shaped.getWidth();
+        int height = shaped.getHeight();
+        NonNullList<Ingredient> ingredients = shaped.getIngredients();
+        Map<Ingredient, Character> ingToChar = new HashMap<>();
+
+        for (int y = 0; y < height; y++) {
+            StringBuilder row = new StringBuilder();
+            for (int x = 0; x < width; x++) {
+                Ingredient ing = ingredients.get(y * width + x);
+                if (ing.isEmpty()) {
+                    row.append(" ");
+                } else {
+                    char symbol = ingToChar.computeIfAbsent(ing, k -> (char) ('A' + (ingToChar.size())));
+                    row.append(symbol);
+
+                    // Берет самый стабильный предмет из ингредиента для графа
+                    Item item = Arrays.stream(ing.getItems())
+                            .map(ItemStack::getItem)
+                            .min(Comparator.comparing(i -> BuiltInRegistries.ITEM.getKey(i).toString()))
+                            .orElse(Items.AIR);
+                    inputs.add(item);
+                }
+            }
+            pattern.add(row.toString());
+        }
+    }
+
+    /**
+     * Рассчитывает тиры и прописывает их каждому CoreItem в графе
+     */
+    private static void applyTiersToGraph(RecipeGraph graph, List<VanillaRecipeData> recipes) {
+        Map<Item, Integer> tierMap = TierCalculator.calculateTier(recipes);
+        graph.getCoreItemIdMap().values().forEach(coreItem -> {
+            int tier = tierMap.getOrDefault(coreItem.vanillaItem(), 0);
+            graph.setTier(coreItem, tier);
+        });
     }
 }
