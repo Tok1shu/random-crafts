@@ -5,6 +5,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
+import net.weyne1.randomcrafts.build.DatapackBuildInfo;
 import net.weyne1.randomcrafts.core.graph.RecipeGraph;
 import net.weyne1.randomcrafts.core.item.CoreItem;
 import net.weyne1.randomcrafts.core.recipe.CoreRecipe;
@@ -18,7 +19,7 @@ import java.util.*;
 import static net.weyne1.randomcrafts.RandomCrafts.LOGGER;
 
 public class RandomCraftsDatapack {
-    private static final String DATAPACK_NAME = "randomcrafts";
+    private static final String DATAPACK_NAME = DatapackBuildInfo.datapackName();
 
     public static void generate(File worldFolder, RecipeGraph graph) {
         File datapackRoot = new File(worldFolder, "datapacks/" + DATAPACK_NAME);
@@ -78,15 +79,14 @@ public class RandomCraftsDatapack {
         File packFile = new File(root, "pack.mcmeta");
 
         try (Writer writer = new FileWriter(packFile)) {
-            // В 1.21.1 pack_format — 48
-            writer.write("""
-            {
-              "pack": {
-                "pack_format": 48,
-                "description": "RandomCrafts generated recipes"
-              }
-            }
-            """);
+            Map<String, Object> pack = new LinkedHashMap<>();
+            pack.put("pack_format", DatapackBuildInfo.packFormat());
+            pack.put("description", DatapackBuildInfo.datapackDescription());
+
+            Map<String, Object> rootObj = new LinkedHashMap<>();
+            rootObj.put("pack", pack);
+
+            new GsonBuilder().setPrettyPrinting().create().toJson(rootObj, writer);
         }
     }
 

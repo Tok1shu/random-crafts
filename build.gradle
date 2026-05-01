@@ -4,6 +4,87 @@ plugins {
     id 'com.gradleup.shadow' version '8.3.6' apply false
 }
 
+// find pack versions here: https://minecraft.wiki/w/Pack_format
+def datapackPackFormatByMinecraftVersionRange = [
+        [min: '1.21',   max: '1.21.1', format: 48],
+        [min: '1.21.2', max: '1.21.3', format: 57],
+        [min: '1.21.4', max: '1.21.4', format: 61],
+]
+
+static List<Integer> parseMcVersion(String v) {
+    if (v == null) return null
+    def trimmed = v.trim()
+    if (trimmed.isEmpty()) return null
+    def parts = trimmed.split('\\.')
+    if (parts.length < 2 || parts.length > 3) return null
+    try {
+        int major = Integer.parseInt(parts[0])
+        int minor = Integer.parseInt(parts[1])
+        int patch = parts.length == 3 ? Integer.parseInt(parts[2]) : 0
+        return [major, minor, patch]
+    } catch (NumberFormatException ignored) {
+        return null
+    }
+}
+
+static int compareMcVersions(String a, String b) {
+    def va = parseMcVersion(a)
+    def vb = parseMcVersion(b)
+    if (va == null || vb == null) {
+        throw new GradleException("Invalid Minecraft version format: compare '${a}' vs '${b}'. Expected 'X.Y' or 'X.Y.Z'.")
+    }
+    for (int i = 0; i < 3; i++) {
+        int diff = va[i] <=> vb[i]
+        if (diff != 0) return diff
+    }
+    return 0
+}
+
+tasks.register('validateBuildConfig') {
+    group = 'verification'
+    description = 'Validates gradle.properties values against minecraft_version.'
+
+    doLast {
+        String minecraftVersion = (rootProject.findProperty('minecraft_version') ?: '').toString().trim()
+        if (minecraftVersion.isEmpty()) {
+            throw new GradleException("Property 'minecraft_version' is missing/blank in gradle.properties.")
+        }
+
+        if (parseMcVersion(minecraftVersion) == null) {
+            throw new GradleException("Property 'minecraft_version' must be 'X.Y' or 'X.Y.Z', got: '${minecraftVersion}'.")
+        }
+
+        String rawPackFormat = (rootProject.findProperty('mc_pack_format') ?: '').toString().trim()
+        if (rawPackFormat.isEmpty()) {
+            throw new GradleException("Property 'mc_pack_format' is missing/blank in gradle.properties.")
+        }
+
+        int packFormat
+        try {
+            packFormat = Integer.parseInt(rawPackFormat)
+        } catch (NumberFormatException e) {
+            throw new GradleException("Property 'mc_pack_format' must be an integer, got: '${rawPackFormat}'.")
+        }
+
+        def matching = datapackPackFormatByMinecraftVersionRange.find { r ->
+            compareMcVersions(minecraftVersion, r.min) >= 0 && compareMcVersions(minecraftVersion, r.max) <= 0
+        }
+        if (matching == null) {
+            throw new GradleException(
+                    "Unknown minecraft_version='${minecraftVersion}' for datapack pack_format validation. " +
+                            "Add its range to datapackPackFormatByMinecraftVersionRange in build.gradle to proceed."
+            )
+        }
+
+        if (packFormat != (matching.format as int)) {
+            throw new GradleException(
+                    "Mismatch: minecraft_version='${minecraftVersion}' expects mc_pack_format=${matching.format}, " +
+                            "but gradle.properties has mc_pack_format=${packFormat}. Fix gradle.properties or update the mapping."
+            )
+        }
+    }
+}
+
 architectury {
     minecraft = project.minecraft_version
 }
@@ -70,6 +151,11 @@ subprojects {
 
     tasks.withType(JavaCompile).configureEach {
         it.options.release = 21
+    }
+
+    // Fail fast if someone bumped minecraft_version but forgot to update pack_format.
+    tasks.matching { it.name in ['build', 'processResources', 'jar', 'remapJar'] }.configureEach {
+        dependsOn rootProject.tasks.named('validateBuildConfig')
     }
 
     // Configure Maven publishing.
