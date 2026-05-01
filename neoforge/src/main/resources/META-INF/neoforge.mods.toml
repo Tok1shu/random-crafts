@@ -8,7 +8,7 @@ modId = "random_crafts"
 modUrl = "https://modrinth.com/mod/random-crafts"
 version = "${version}"
 displayName = "Random Crafts"
-authors = "Weyne1 (Main Author), Tokishu (Ported mod)"
+authors = "Author: Weyne1; Contributors: Tokishu"
 description = '''
 Let's randomize crafts for each world! Let the chaos begin...
 '''
