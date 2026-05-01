@@ -10,7 +10,8 @@ public record CoreRecipe(
         List<CoreItem> inputs,
         int outputCount,
         boolean isShapeless,
-        List<String> patternLayout
+        List<String> patternLayout,
+        String category
 ) {
 
     @Override

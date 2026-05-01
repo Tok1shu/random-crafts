@@ -78,7 +78,7 @@ public class RecipeGenerator {
 
         usedFingerprints.add(fingerprint);
         return new CoreRecipe(original.id(), output, newInputsList, original.outputCount(),
-                original.isShapeless(), original.patternLayout());
+                original.isShapeless(), original.patternLayout(), original.category());
     }
 
     /**

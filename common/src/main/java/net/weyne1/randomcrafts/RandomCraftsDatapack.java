@@ -103,26 +103,30 @@ public class RandomCraftsDatapack {
 
         if (recipe.isShapeless()) {
             json.put("type", "minecraft:crafting_shapeless");
+        } else {
+            json.put("type", "minecraft:crafting_shaped");
+        }
+
+        if (recipe.category() != null && !recipe.category().isEmpty()) {
+            json.put("category", recipe.category());
+        }
+
+        if (recipe.isShapeless()) {
             List<Map<String, Object>> ingredients = new ArrayList<>();
-            // Для бесформенных просто перечисляем всё, что есть в списке
             for (CoreItem ci : recipe.inputs()) {
                 ingredients.add(Map.of("item", BuiltInRegistries.ITEM.getKey(ci.vanillaItem()).toString()));
             }
             json.put("ingredients", ingredients);
         } else {
-            json.put("type", "minecraft:crafting_shaped");
             json.put("pattern", recipe.patternLayout());
-
             Map<String, Object> keyMap = new LinkedHashMap<>();
             List<CoreItem> inputs = recipe.inputs();
             List<String> pattern = recipe.patternLayout();
 
-            // Проходим по паттерну и сопоставляем каждый символ с предметом из списка
             int inputIndex = 0;
             for (String row : pattern) {
                 for (char c : row.toCharArray()) {
                     if (c == ' ') continue;
-
                     String symbol = String.valueOf(c);
                     if (!keyMap.containsKey(symbol) && inputIndex < inputs.size()) {
                         Item item = inputs.get(inputIndex).vanillaItem();

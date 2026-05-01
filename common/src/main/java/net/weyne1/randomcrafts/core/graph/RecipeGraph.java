@@ -33,7 +33,8 @@ public class RecipeGraph {
         List<CoreRecipe> updatedList = new ArrayList<>();
 
         for (CoreRecipe recipe : recipes) {
-            updatedList.add(new CoreRecipe(recipe.id(), updated, recipe.inputs(), recipe.outputCount(), recipe.isShapeless(), recipe.patternLayout()));
+            updatedList.add(new CoreRecipe(recipe.id(), updated, recipe.inputs(), recipe.outputCount(),
+                    recipe.isShapeless(), recipe.patternLayout(), recipe.category()));
         }
 
         recipesByOutput.put(item.id(), updatedList);
@@ -53,7 +54,8 @@ public class RecipeGraph {
                 .map(this::normalizeItem)
                 .toList();
 
-        CoreRecipe normalized = new CoreRecipe(recipe.id(), output, inputs, recipe.outputCount(), recipe.isShapeless(), recipe.patternLayout());
+        CoreRecipe normalized = new CoreRecipe(recipe.id(), output, inputs, recipe.outputCount(),
+                recipe.isShapeless(), recipe.patternLayout(), recipe.category());
 
         recipesByOutput
                 .computeIfAbsent(output.id(), k -> new ArrayList<>())

@@ -186,6 +186,8 @@ public class RandomCraftWorldEvents {
     private static VanillaRecipeData convertToVanillaData(RecipeHolder<CraftingRecipe> holder, ServerLevel world) {
         CraftingRecipe recipe = holder.value();
         ItemStack result = recipe.getResultItem(world.registryAccess());
+        CraftingBookCategory category = recipe.category();
+        String categoryName = category.getSerializedName();
 
         if (result.isEmpty() || result.is(Items.AIR)) return null;
 
@@ -205,7 +207,7 @@ public class RandomCraftWorldEvents {
         }
 
         return new VanillaRecipeData(holder.id().toString(), result.getItem(), result.getCount(),
-                recipeInputs, isShapeless, patternLayout);
+                recipeInputs, isShapeless, patternLayout, categoryName);
     }
 
     /**
