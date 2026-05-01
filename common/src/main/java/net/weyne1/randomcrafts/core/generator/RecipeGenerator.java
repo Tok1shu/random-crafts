@@ -151,8 +151,8 @@ public class RecipeGenerator {
 
     private static final Set<Class<? extends Item>> TOOLS_AND_ARMOR = Set.of(
             ArmorItem.class, DiggerItem.class, SwordItem.class, ShieldItem.class,
-            ElytraItem.class, BowItem.class, CrossbowItem.class, TridentItem.class,
-            SpyglassItem.class, ProjectileWeaponItem.class, FishingRodItem.class, BrushItem.class
+            BowItem.class, CrossbowItem.class, TridentItem.class, SpyglassItem.class,
+            ProjectileWeaponItem.class, FishingRodItem.class, BrushItem.class
     );
 
     private static final Set<Class<? extends Block>> FUNCTIONAL_BLOCKS = Set.of(
@@ -165,7 +165,9 @@ public class RecipeGenerator {
     // --- Вспомогательные проверки ---
 
     private boolean isToolOrArmor(Item item) {
-        return TOOLS_AND_ARMOR.stream().anyMatch(clazz -> clazz.isInstance(item)) || item instanceof BoatItem;
+        return TOOLS_AND_ARMOR.stream().anyMatch(clazz -> clazz.isInstance(item))
+                || item instanceof BoatItem
+                || item == Items.ELYTRA;
     }
 
     private boolean isFunctionalBlock(Item item) {

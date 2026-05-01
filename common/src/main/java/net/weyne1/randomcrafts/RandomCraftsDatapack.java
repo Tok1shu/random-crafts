@@ -112,9 +112,9 @@ public class RandomCraftsDatapack {
         }
 
         if (recipe.isShapeless()) {
-            List<Map<String, Object>> ingredients = new ArrayList<>();
+            List<String> ingredients = new ArrayList<>();
             for (CoreItem ci : recipe.inputs()) {
-                ingredients.add(Map.of("item", BuiltInRegistries.ITEM.getKey(ci.vanillaItem()).toString()));
+                ingredients.add(BuiltInRegistries.ITEM.getKey(ci.vanillaItem()).toString());
             }
             json.put("ingredients", ingredients);
         } else {
@@ -130,7 +130,7 @@ public class RandomCraftsDatapack {
                     String symbol = String.valueOf(c);
                     if (!keyMap.containsKey(symbol) && inputIndex < inputs.size()) {
                         Item item = inputs.get(inputIndex).vanillaItem();
-                        keyMap.put(symbol, Map.of("item", BuiltInRegistries.ITEM.getKey(item).toString()));
+                        keyMap.put(symbol, BuiltInRegistries.ITEM.getKey(item).toString()); // просто строка
                     }
                     inputIndex++;
                 }
@@ -140,7 +140,9 @@ public class RandomCraftsDatapack {
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", outputId.toString());
-        result.put("count", recipe.outputCount());
+        if (recipe.outputCount() > 1) {
+            result.put("count", recipe.outputCount());
+        }
         json.put("result", result);
 
         try (Writer writer = new FileWriter(file)) {

@@ -7,6 +7,7 @@ import dev.architectury.event.events.common.LifecycleEvent;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.core.Holder;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -148,10 +149,13 @@ public class RandomCraftWorldEvents {
 
         // Извлечение данных (Vanilla -> Внутренний формат мода)
         LOGGER.info("Extracting original recipes...");
-        List<VanillaRecipeData> vanillaRecipes = world.getRecipeManager()
-                .getAllRecipesFor(RecipeType.CRAFTING)
+
+        // Фильтруем сами ибо разработчикам лень
+        List<VanillaRecipeData> vanillaRecipes = server.getRecipeManager()
+                .getRecipes()
                 .stream()
-                .map(holder -> convertToVanillaData(holder, world))
+                .filter(holder -> holder.value() instanceof CraftingRecipe)
+                .map(holder -> convertToVanillaData((RecipeHolder<CraftingRecipe>) holder, world))
                 .filter(Objects::nonNull)
                 .sorted(Comparator.comparing(VanillaRecipeData::id))
                 .toList();
@@ -183,14 +187,23 @@ public class RandomCraftWorldEvents {
     /**
      * Превращает технический рецепт Minecraft в простые данные.
      */
-    private static VanillaRecipeData convertToVanillaData(RecipeHolder<CraftingRecipe> holder, ServerLevel world) {
-        CraftingRecipe recipe = holder.value();
-        ItemStack result = recipe.getResultItem(world.registryAccess());
-        CraftingBookCategory category = recipe.category();
-        String categoryName = category.getSerializedName();
+    private static VanillaRecipeData convertToVanillaData(RecipeHolder<?> holder, ServerLevel world) {
+        if (!(holder.value() instanceof CraftingRecipe recipe)) return null;
+        if (recipe.isSpecial()) return null;
+
+        ItemStack result;
+        if (recipe instanceof ShapedRecipe shaped) {
+            result = shaped.assemble(null, world.registryAccess());
+        } else if (recipe instanceof ShapelessRecipe shapeless) {
+            result = shapeless.assemble(null, world.registryAccess());
+        } else {
+            return null;
+        }
 
         if (result.isEmpty() || result.is(Items.AIR)) return null;
 
+        CraftingBookCategory category = recipe.category();
+        String categoryName = category.getSerializedName();
         List<String> patternLayout = new ArrayList<>();
         List<Item> recipeInputs = new ArrayList<>();
         boolean isShapeless = true;
@@ -198,16 +211,22 @@ public class RandomCraftWorldEvents {
         if (recipe instanceof ShapedRecipe shaped) {
             isShapeless = false;
             extractShapedData(shaped, patternLayout, recipeInputs);
-        } else {
-            recipeInputs = recipe.getIngredients().stream()
-                    .filter(ing -> !ing.isEmpty())
-                    .map(ing -> ing.getItems()[0].getItem())
-                    .sorted(Comparator.comparing(i -> BuiltInRegistries.ITEM.getKey(i).toString()))
+        } else if (recipe instanceof ShapelessRecipe shapeless) {
+            recipeInputs = shapeless.placementInfo().ingredients().stream()
+                    .map(ing -> ing.items().get(0).value())
+                    .sorted(Comparator.comparing((Item i) -> BuiltInRegistries.ITEM.getKey(i).toString()))
                     .collect(Collectors.toCollection(ArrayList::new));
         }
 
-        return new VanillaRecipeData(holder.id().toString(), result.getItem(), result.getCount(),
-                recipeInputs, isShapeless, patternLayout, categoryName);
+        return new VanillaRecipeData(
+                holder.id().location().toString(),
+                result.getItem(),
+                result.getCount(),
+                recipeInputs,
+                isShapeless,
+                patternLayout,
+                categoryName
+        );
     }
 
     /**
@@ -216,23 +235,23 @@ public class RandomCraftWorldEvents {
     private static void extractShapedData(ShapedRecipe shaped, List<String> pattern, List<Item> inputs) {
         int width = shaped.getWidth();
         int height = shaped.getHeight();
-        NonNullList<Ingredient> ingredients = shaped.getIngredients();
+        List<Optional<Ingredient>> ingredients = shaped.getIngredients();
         Map<Ingredient, Character> ingToChar = new HashMap<>();
 
         for (int y = 0; y < height; y++) {
             StringBuilder row = new StringBuilder();
             for (int x = 0; x < width; x++) {
-                Ingredient ing = ingredients.get(y * width + x);
+                Optional<Ingredient> ing = ingredients.get(y * width + x);
                 if (ing.isEmpty()) {
                     row.append(" ");
                 } else {
-                    char symbol = ingToChar.computeIfAbsent(ing, k -> (char) ('A' + (ingToChar.size())));
+                    Ingredient ingredient = ing.get();
+                    char symbol = ingToChar.computeIfAbsent(ingredient, k -> (char)('A' + ingToChar.size()));
                     row.append(symbol);
 
-                    // Берет самый стабильный предмет из ингредиента для графа
-                    Item item = Arrays.stream(ing.getItems())
-                            .map(ItemStack::getItem)
-                            .min(Comparator.comparing(i -> BuiltInRegistries.ITEM.getKey(i).toString()))
+                    Item item = ingredient.items().stream()
+                            .map(Holder::value)
+                            .min(Comparator.comparing((Item i) -> BuiltInRegistries.ITEM.getKey(i).toString()))
                             .orElse(Items.AIR);
                     inputs.add(item);
                 }
