@@ -8,8 +8,8 @@
     "Weyne1"
   ],
   "contact": {
-    "homepage": "https://fabricmc.net/",
-    "sources": "https://github.com/FabricMC/fabric-example-mod"
+    "homepage": "https://modrinth.com/mod/random-crafts",
+    "sources": "https://github.com/Weyne1/random-crafts"
   },
   "license": "MIT",
   "icon": "icon.png",
