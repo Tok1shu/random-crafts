@@ -213,7 +213,7 @@ public class RandomCraftWorldEvents {
             extractShapedData(shaped, patternLayout, recipeInputs);
         } else if (recipe instanceof ShapelessRecipe shapeless) {
             recipeInputs = shapeless.placementInfo().ingredients().stream()
-                    .map(ing -> ing.items().get(0).value())
+                    .map(ing -> ing.items().findFirst().map(Holder::value).orElse(Items.AIR))
                     .sorted(Comparator.comparing((Item i) -> BuiltInRegistries.ITEM.getKey(i).toString()))
                     .collect(Collectors.toCollection(ArrayList::new));
         }
@@ -249,7 +249,7 @@ public class RandomCraftWorldEvents {
                     char symbol = ingToChar.computeIfAbsent(ingredient, k -> (char)('A' + ingToChar.size()));
                     row.append(symbol);
 
-                    Item item = ingredient.items().stream()
+                    Item item = ingredient.items()
                             .map(Holder::value)
                             .min(Comparator.comparing((Item i) -> BuiltInRegistries.ITEM.getKey(i).toString()))
                             .orElse(Items.AIR);

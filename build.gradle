@@ -6,8 +6,6 @@ plugins {
 
 // find pack versions here: https://minecraft.wiki/w/Pack_format
 def datapackPackFormatByMinecraftVersionRange = [
-        [min: '1.21',   max: '1.21.1', format: 48],
-        [min: '1.21.2', max: '1.21.3', format: 57],
         [min: '1.21.4', max: '1.21.4', format: 61],
 ]
 
