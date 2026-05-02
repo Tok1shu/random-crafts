@@ -1,7 +1,10 @@
 package net.weyne1.randomcrafts.core.generator;
 
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.equipment.Equippable;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.item.*;
 
@@ -150,9 +153,8 @@ public class RecipeGenerator {
     // --- Группы запрещенных классов ---
 
     private static final Set<Class<? extends Item>> TOOLS_AND_ARMOR = Set.of(
-            ArmorItem.class, DiggerItem.class, SwordItem.class, ShieldItem.class,
             BowItem.class, CrossbowItem.class, TridentItem.class, SpyglassItem.class,
-            ProjectileWeaponItem.class, FishingRodItem.class, BrushItem.class
+            ProjectileWeaponItem.class, FishingRodItem.class, BrushItem.class, ShieldItem.class
     );
 
     private static final Set<Class<? extends Block>> FUNCTIONAL_BLOCKS = Set.of(
@@ -164,10 +166,24 @@ public class RecipeGenerator {
 
     // --- Вспомогательные проверки ---
 
+
     private boolean isToolOrArmor(Item item) {
-        return TOOLS_AND_ARMOR.stream().anyMatch(clazz -> clazz.isInstance(item))
-                || item instanceof BoatItem
-                || item == Items.ELYTRA;
+        if (TOOLS_AND_ARMOR.stream().anyMatch(clazz -> clazz.isInstance(item))) return true;
+        if (item instanceof BoatItem || item == Items.ELYTRA) return true;
+
+        // Броня: через компонент EQUIPPABLE
+        ItemStack stack = item.getDefaultInstance();
+        Equippable equippable = stack.get(DataComponents.EQUIPPABLE);
+        if (equippable != null) {
+            EquipmentSlot slot = equippable.slot();
+            if (slot == EquipmentSlot.HEAD || slot == EquipmentSlot.CHEST ||
+                    slot == EquipmentSlot.LEGS || slot == EquipmentSlot.FEET) return true;
+        }
+
+        // Инструменты/оружие: через компонент TOOL
+        if (stack.has(DataComponents.TOOL)) return true;
+
+        return false;
     }
 
     private boolean isFunctionalBlock(Item item) {

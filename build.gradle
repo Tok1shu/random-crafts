@@ -6,7 +6,7 @@ plugins {
 
 // find pack versions here: https://minecraft.wiki/w/Pack_format
 def datapackPackFormatByMinecraftVersionRange = [
-        [min: '1.21.4', max: '1.21.4', format: 61],
+        [min: '1.21.5', max: '1.21.5', format: 71],
 ]
 
 static List<Integer> parseMcVersion(String v) {
